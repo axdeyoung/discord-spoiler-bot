@@ -1,0 +1,7 @@
+```
+Available Commands:
+
+[help, h] <command>
+    Print this help text.
+    If a command is specified, specialized help is given for that command
+```

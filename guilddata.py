@@ -1,7 +1,7 @@
-### ServerData class manages data for a single server
+### GuildData class manages data for a single server
 # needs to be picklable
-class ServerData:
-    """docstring for ServerData"""
+class GuildData:
+    """docstring for GuildData"""
 
     # members:
         # roles: a list of strings; names of roles managed by the bot
