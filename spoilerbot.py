@@ -1,16 +1,21 @@
+from typing import List
 import discord
-import pickle
 from os import path
 from argparse import ArgumentParser
 import sys
 import shlex
+from botstate import *
 
 triggerChar = '$'
+
 
 # Get command responses dir path
 wd = path.abspath(__file__)
 wd = path.dirname(wd)
 commandResponseDir = path.join(wd, "command_responses")
+
+stateFile = path.join(wd, "bot_state")
+botState = BotState(stateFile)
 
 # Set up script arg parser
 scriptParser = ArgumentParser(description='''Discord Bot to help reign in spoilers on your server''')
@@ -21,7 +26,9 @@ args = scriptParser.parse_args()
 # get the Discord client
 client = discord.Client()
 
-def parseMessage(message):
+
+### HELPERS ###
+def parseMessage(message:str):
     '''Reads the Discord message and returns a list of arguments'''
     # test of this message is a valid command
     if not message.startswith(triggerChar):
@@ -33,8 +40,9 @@ def parseMessage(message):
     print("Parsed: {}".format(parsedMessage))
     return parsedMessage
 
-def getCommandResponse(fileName):
-    '''Expects a file name in command_responses directory.
+def getCommandResponse(fileName:str):
+    '''
+    Expects a file name in command_responses directory.
     Returns: the string contained in the specified file
     Returns: None if the specified file is not found
     '''
@@ -52,11 +60,10 @@ def getCommandResponse(fileName):
         return fileContents
     except:
         return None
-    
 
 
 ### COMMAND RESPONSES ###
-async def respondHelp(message, commandArgs):
+async def respondHelp(message:discord.Message, commandArgs:List[str]):
     if len(commandArgs) == 1: # if help used on its own
         print("Sending basic help text")
         response = getCommandResponse("help")
@@ -67,15 +74,63 @@ async def respondHelp(message, commandArgs):
         response = getCommandResponse("help_{}".format(commandArgs[1].lower()))
         # if that message doesn't exist, give generic command not found text
         if response == None:
-            response = getCommandResponse("command_not_found").format(commandArgs[1].lower())
+            response = getCommandResponse("not_found").format("help text for", commandArgs[1].lower())
         await message.channel.send(response)
 
-async def respondCommandNotFound(message, commandArgs):
-    response = getCommandResponse("command_not_found").format(commandArgs[0].lower())
+async def respondCommandNotFound(message:discord.message, commandArgs:List[str]):
+    response = getCommandResponse("not_found").format("command", commandArgs[0].lower())
     await message.channel.send(response)
+
+async def listMedia(message:discord.message, commandArgs:List[str]):
+
+    if len(botState.roles) == 0:
+        response = getCommandResponse("listmedia_empty")
+    else:
+        response = getCommandResponse("listmedia_header").format(triggerChar)
+        response = response + "```"
+        for roleID in botState.roles:
+            roleName = message.guild.get_role(roleID).name
+            response = response + "\n" + roleName
+        response = response + "```"
+
+    await message.channel.send(response)
+
+
+async def addMedia(message:discord.message, commandArgs:List[str]):
+    response = None
+    try:
+        mediaName = commandArgs[1]
+    except:
+        response = getCommandResponse("help_addmedia")
+        await message.channel.send(response)
+        return
+
+    response = getCommandResponse("addmedia").format(mediaName)
+    if not await botState.addRole(mediaName, message.guild):
+        response = getCommandResponse("already_exists").format("role", mediaName)
+
+    await message.channel.send(response)
+
+
+async def deleteMedia(message:discord.message, commandArgs:List[str]):
+    response = None
     
+    try:
+        mediaName = commandArgs[1]
+    except:
+        response = getCommandResponse("help_deletemedia")
+        await message.channel.send(response)
+        return
 
+    response = getCommandResponse("deletemedia").format(mediaName)
+    role = discord.utils.get(message.guild.roles, name=mediaName)
+    if not await botState.deleteRole(role):
+        response = getCommandResponse("not_found").format("media role", mediaName)
 
+    await message.channel.send(response)
+        
+
+### EVENT HANDLERS ###
 @client.event
 async def on_ready():
     print("Logged in as user {0.user} and ready to go!".format(client))
@@ -83,7 +138,7 @@ async def on_ready():
     # TODO: check voice state and ping channel users
 
 @client.event
-async def on_message(message):
+async def on_message(message:discord.Message):
     # if the message is from me, ignore it.
     if message.author == client.user:
         return 
@@ -91,11 +146,12 @@ async def on_message(message):
     if not message.content.startswith(triggerChar):
         return
 
-    # read messages
+    # read message
     commandArgs = parseMessage(message.content)
 
     # respond to valid commands
     command = commandArgs[0].lower()
+
     if command == "ping":
         print("Ponging!")
         await message.channel.send('pong')
@@ -103,14 +159,33 @@ async def on_message(message):
     elif command == "help" or command == "h":
         await respondHelp(message, commandArgs)
 
+    elif command == "listmedia" or command == "l":
+        await listMedia(message, commandArgs)
+
+    elif command == "unspoil":
+        await message.channel.send("unspoil not yet implemented")
+        #TODO implement this
+
+    elif command == "spoil":
+        await message.channel.send("spoil not yet implemented")
+        #TODO implement this
+
+    elif command == "addmedia" and message.author.guild_permissions.manage_roles:
+        await addMedia(message, commandArgs)
+    
+    elif command == "deletemedia" and message.author.guild_permissions.manage_roles:
+        await deleteMedia(message, commandArgs)
+    # TODO: add a bunch more commands and stuff
     else:
         await respondCommandNotFound(message, commandArgs)
 
 @client.event
-async def on_voice_state_update(member, before, after):
-    print("{0.user} updated their voice state".format(member))
+async def on_voice_state_update(member:discord.Member, before:discord.VoiceState, after:discord.VoiceState):
+    print("{0.display_name} updated their voice state".format(member))
 
 
+
+### MAIN ###
 def main():
     # get the token file path from argument parser
     tokenPath = args.tokenFile[0]

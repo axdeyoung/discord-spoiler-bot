@@ -1,0 +1,2 @@
+The following media is available to block spoilers
+Use {0}PLACEHOLDER [media] to blacklist yourself from spoilers
